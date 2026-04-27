@@ -8,24 +8,28 @@
 #include <assert.h>
 #include <fenv.h>
 #include <xmmintrin.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <string.h>
+#include <pthread.h>
+#include <time.h>
 
-#include <iterator>
-
-void handle_sigfpe(int signo) {
+static void handle_sigfpe(int signo) {
     assert(signo == SIGFPE);
     fprintf(stderr, "Got a SIGFPE!\n");
 }
 
-void handle_sigill(int signo, siginfo_t*, void* ucontextv) {
+static void handle_sigill(int signo, siginfo_t *info __attribute__((unused)), void *ucontextv) {
     assert(signo == SIGILL);
     fprintf(stderr, "Got a SIGILL!\n");
 
-    const auto uctxt = (ucontext_t*) ucontextv;
-	const auto gregs = uctxt->uc_mcontext.gregs;
+    ucontext_t *uctxt = (ucontext_t *) ucontextv;
+    greg_t *gregs = uctxt->uc_mcontext.gregs;
     gregs[REG_RIP] += 2;
 }
 
-void* thread_start(void*) {
+static void *thread_start(void *arg __attribute__((unused))) {
     for (int i = 0; i < 5; i++) {
         fprintf(stderr, "Hello from thread!\n");
         sleep(1);
@@ -33,13 +37,14 @@ void* thread_start(void*) {
     return NULL;
 }
 
-int main() {
+int main(void) {
     fprintf(stderr, "Hello world!\n");
     fprintf(stderr, "Hello world!\n");
     fprintf(stderr, "Hello world!\n");
     fprintf(stderr, "Bye bye now!\n");
 
-    struct sigaction act = {};
+    struct sigaction act;
+    memset(&act, 0, sizeof(act));
     act.sa_handler = handle_sigfpe;
     assert(sigaction(SIGFPE, &act, NULL) == 0);
 
@@ -56,27 +61,23 @@ int main() {
 
     fprintf(stderr, "Good times!\n");
 
-    // now trigger a signal without `raise`
-    // so we can test how we enter the signal handling path from unprivileged code
-
-    act = {};
+    memset(&act, 0, sizeof(act));
     act.sa_sigaction = handle_sigill;
     act.sa_flags |= SA_SIGINFO;
     assert(sigemptyset(&act.sa_mask) == 0);
     assert(sigaction(SIGILL, &act, NULL) == 0);
 
-    struct sigaction oldact = {};
+    struct sigaction oldact;
+    memset(&oldact, 0, sizeof(oldact));
     assert(sigaction(SIGILL, NULL, &oldact) == 0);
     assert(oldact.sa_sigaction == handle_sigill);
 
-    asm("ud2");
+    __asm__("ud2");
 
-    act = {};
+    memset(&act, 0, sizeof(act));
     act.sa_handler = SIG_DFL;
     assert(sigaction(SIGILL, &act, NULL) == 0);
     assert(sigaction(SIGFPE, &act, NULL) == 0);
-
-    // test vdso syscalls
 
     struct timespec t;
     assert(clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t) == 0);
@@ -95,16 +96,13 @@ int main() {
 
     fflush(stdout);
     fflush(stderr);
-    if (pid_t child = fork()) {
+    pid_t child = fork();
+    if (child) {
         assert(child > 0);
-        // parent process
-
         fprintf(stderr, "[%d] Parent going to sleep!\n", getpid());
         sleep(5);
         fprintf(stderr, "[%d] Parent woke up!\n", getpid());
     } else {
-        // child process
-
         fprintf(stderr, "[%d] Child going to sleep!\n", getpid());
         sleep(10);
         fprintf(stderr, "[%d] Child woke up!\n", getpid());
@@ -112,12 +110,12 @@ int main() {
     }
 
     pthread_t thread;
-    auto result = pthread_create(&thread, NULL, thread_start, NULL);
+    int result = pthread_create(&thread, NULL, thread_start, NULL);
     assert(result == 0);
 
     result = pthread_join(thread, NULL);
     assert(result == 0);
 
     wait(NULL);
+    return 0;
 }
-

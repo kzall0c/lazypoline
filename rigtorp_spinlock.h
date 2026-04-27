@@ -2,34 +2,29 @@
 
 #pragma once
 
-#include <atomic>
+#include <stdatomic.h>
+#include <stdbool.h>
 
-struct spinlock {
-  std::atomic<bool> lock_ = {0};
+typedef struct {
+  atomic_bool lock_;
+} spinlock;
 
-  void lock() noexcept {
-    for (;;) {
-      // Optimistically assume the lock is free on the first try
-      if (!lock_.exchange(true, std::memory_order_acquire)) {
-        return;
-      }
-      // Wait for lock to be released without generating cache misses
-      while (lock_.load(std::memory_order_relaxed)) {
-        // Issue X86 PAUSE or ARM YIELD instruction to reduce contention between
-        // hyper-threads
-        __builtin_ia32_pause();
-      }
-    }
+#define SPINLOCK_INIT { ATOMIC_VAR_INIT(false) }
+
+static inline void spinlock_lock(spinlock *s) {
+  for (;;) {
+    if (!atomic_exchange_explicit(&s->lock_, true, memory_order_acquire))
+      return;
+    while (atomic_load_explicit(&s->lock_, memory_order_relaxed))
+      __builtin_ia32_pause();
   }
+}
 
-  bool try_lock() noexcept {
-    // First do a relaxed load to check if lock is free in order to prevent
-    // unnecessary cache misses if someone does while(!try_lock())
-    return !lock_.load(std::memory_order_relaxed) &&
-           !lock_.exchange(true, std::memory_order_acquire);
-  }
+static inline bool spinlock_try_lock(spinlock *s) {
+  return !atomic_load_explicit(&s->lock_, memory_order_relaxed) &&
+         !atomic_exchange_explicit(&s->lock_, true, memory_order_acquire);
+}
 
-  void unlock() noexcept {
-    lock_.store(false, std::memory_order_release);
-  }
-};
+static inline void spinlock_unlock(spinlock *s) {
+  atomic_store_explicit(&s->lock_, false, memory_order_release);
+}

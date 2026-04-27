@@ -4,33 +4,19 @@
 #include <sysdeps/kernel_sigaction.h>
 #include "rigtorp_spinlock.h"
 
-#include <array>
+#include <signal.h>
 
-class SignalHandlers {
-    struct {
-        kernel_sigaction dfl_handler;
-        std::array<kernel_sigaction, NSIG> app_handlers;
-    } members;
-    mutable spinlock mut; // mutable for readlocks
+typedef struct {
+    struct kernel_sigaction dfl_handler;
+    struct kernel_sigaction app_handlers[NSIG];
+} SignalHandlersMembers;
 
-    decltype(members.dfl_handler)& dfl_handler() { return members.dfl_handler; }
-    decltype(members.app_handlers)& app_handlers() { return members.app_handlers; }
+typedef struct {
+    SignalHandlersMembers members;
+    spinlock mut;
+} SignalHandlers;
 
-    struct kernel_sigaction get_app_handler(int signo);
-    struct kernel_sigaction set_app_handler(int signo, const struct kernel_sigaction &newact);
-
-    enum SIGDISP_TYPE { IGN, TERM, CORE, STOP, CONT };
-    static SIGDISP_TYPE get_default_behavior(int signo);
-    static bool is_terminating_sig(int signo) {
-        auto beh = get_default_behavior(signo);
-        return beh == TERM || beh == CORE; 
-    }
-
-public:
-    long long handle_app_sigaction(int signo, const struct kernel_sigaction* newact, struct kernel_sigaction* oldact);
-    void invoke_app_specific_handler(int sig, siginfo_t *info, void *ucontextv);
-
-    SignalHandlers();
-    SignalHandlers(const SignalHandlers& other);
-};
-
+void signal_handlers_init(SignalHandlers *sh);
+void signal_handlers_copy(SignalHandlers *dst, const SignalHandlers *src);
+long long signal_handlers_handle_app_sigaction(SignalHandlers *sh, int signo, const struct kernel_sigaction *newact, struct kernel_sigaction *oldact);
+void signal_handlers_invoke_app_specific_handler(SignalHandlers *sh, int sig, siginfo_t *info, void *ucontextv);

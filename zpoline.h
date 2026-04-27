@@ -3,10 +3,10 @@
 #include "config.h"
 #include "util.h"
 #include <sys/mman.h>
+#include <stdint.h>
 
-void init_zpoline();
+void init_zpoline(void);
 
-// implemented in asm_syscall_hook.asm
-extern "C" void asm_syscall_hook(void);
+void asm_syscall_hook(void);
 
-void rewrite_syscall_inst(uint16_t* syscall_addr);
+void rewrite_syscall_inst(uint16_t *syscall_addr);

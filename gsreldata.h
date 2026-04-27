@@ -6,45 +6,53 @@
 #define SIGRETURN_STACK_SP_OFFSET           16
 #define RIP_AFTER_SYSCALL_STACK_SP_OFFSET   32792
 #define XSAVE_AREA_STACK_SP_OFFSET          36928
-/* https://www.moritz.systems/blog/how-debuggers-work-getting-and-setting-x86-registers-part-2/ */
-#define XSAVE_EAX                           0b111   /* saves the x87 state, and XMM & YMM vector registers */
-#define XSAVE_SIZE                          768     /* aligned to 64-byte boundary, so fine */
+#define XSAVE_EAX                           0b111
+#define XSAVE_SIZE                          768
 
 #ifndef __ASSEMBLER__
 
-class SignalHandlers;
+#include "signal_handlers.h"
+#include <stddef.h>
 
-struct alignas(0x1000) GSRelativeData {
-    volatile char sud_selector = 0xFF;
-    SignalHandlers* signal_handlers = nullptr;
+struct GSRelativeData {
+    volatile char sud_selector;
+    char _pad[7];
+    SignalHandlers *signal_handlers;
     struct {
-        volatile long long* current = base;
+        volatile long long *current;
         volatile long long base[0x1000];
     } sigreturn_stack;
-    struct { // stack of `rip_after_syscall`s for use during vfork handling
-        volatile char* current = base;
+    struct {
+        volatile char *current;
         volatile char base[0x1000];
     } rip_after_syscall_stack;
-    struct { // xsave area stack grows up
-        volatile char* current = base;
-        volatile char __attribute__((aligned(64))) base[XSAVE_SIZE * 6]; // 6 nesting levels ought to be fine
+    struct {
+        volatile char *current;
+        volatile char __attribute__((aligned(64))) base[XSAVE_SIZE * 6];
     } xsave_area_stack;
-};
+} __attribute__((aligned(0x1000)));
 
-// GS-relative accessor
-inline const auto gsreldata = (__seg_gs GSRelativeData*) 0x0;
+static inline void gsreldata_init(struct GSRelativeData *g) {
+    g->sud_selector = (char)0xFF;
+    g->signal_handlers = NULL;
+    g->sigreturn_stack.current = g->sigreturn_stack.base;
+    g->rip_after_syscall_stack.current = g->rip_after_syscall_stack.base;
+    g->xsave_area_stack.current = g->xsave_area_stack.base;
+}
 
-// necessary to keep asm files in sync
-static_assert(__builtin_offsetof(GSRelativeData, sud_selector) == SUD_SELECTOR_OFFSET);
-static_assert(__builtin_offsetof(GSRelativeData, sigreturn_stack.current) == SIGRETURN_STACK_SP_OFFSET);
-static_assert(__builtin_offsetof(GSRelativeData, rip_after_syscall_stack.current) == RIP_AFTER_SYSCALL_STACK_SP_OFFSET);
-static_assert(__builtin_offsetof(GSRelativeData, xsave_area_stack.current) == XSAVE_AREA_STACK_SP_OFFSET);
+/* GS-relative accessor — Clang __seg_gs extension works in C too */
+#define gsreldata ((__seg_gs struct GSRelativeData *)0x0)
 
-GSRelativeData* map_gsrel_region();
-SignalHandlers* map_signal_handlers();
-void enable_sud();
-extern "C" void setup_new_thread(unsigned long long clone_flags);
-void teardown_thread_metadata();
-extern "C" void setup_restore_selector_trampoline(void* ucontextv);
+_Static_assert(offsetof(struct GSRelativeData, sud_selector) == SUD_SELECTOR_OFFSET, "");
+_Static_assert(offsetof(struct GSRelativeData, sigreturn_stack.current) == SIGRETURN_STACK_SP_OFFSET, "");
+_Static_assert(offsetof(struct GSRelativeData, rip_after_syscall_stack.current) == RIP_AFTER_SYSCALL_STACK_SP_OFFSET, "");
+_Static_assert(offsetof(struct GSRelativeData, xsave_area_stack.current) == XSAVE_AREA_STACK_SP_OFFSET, "");
+
+struct GSRelativeData *map_gsrel_region(void);
+SignalHandlers *map_signal_handlers(void);
+void enable_sud(void);
+void setup_new_thread(unsigned long long clone_flags);
+void teardown_thread_metadata(void);
+void setup_restore_selector_trampoline(void *ucontextv);
 
 #endif

@@ -12,25 +12,20 @@
 #endif
 
 #ifndef SYS_USER_DISPATCH
-# define SYS_USER_DISPATCH 2	/* syscall user dispatch triggered */
+# define SYS_USER_DISPATCH 2
 #endif
 
-class UnblockScope {
+typedef struct {
     char oldselector;
-public:
-    UnblockScope ();
-    ~UnblockScope ();
-};
+} SudScope;
 
-class BlockScope {
-    char oldselector;
-public:
-    BlockScope ();
-    ~BlockScope ();
-};
+void sud_unblock_scope_init(SudScope *s);
+void sud_unblock_scope_cleanup(SudScope *s);
+void sud_block_scope_init(SudScope *s);
+void sud_block_scope_cleanup(SudScope *s);
 
-void init_sud();
+void init_sud(void);
 
 __attribute__((retain))
-char get_privilege_level();
+char get_privilege_level(void);
 void set_privilege_level(char sud_status);

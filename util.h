@@ -12,14 +12,14 @@
 #include <stdint.h>
 #include <dlfcn.h>
 #include <syscall.h>
+#include <stdbool.h>
 
-// stringification macros
 #define XSTR(X) #X
 #define STR(X) XSTR(X)
 
 #define ASSERT_ELSE_PERROR(cond) \
     do {                            \
-        bool x = static_cast<bool>(cond);                \
+        bool x = (bool)(cond);                \
         if (!x) {                       \
             fflush(stdout);                 \
             fflush(stderr);                     \
@@ -28,7 +28,7 @@
             fflush(stderr);                                                                     \
             abort();                                                                            \
         }                                                                                       \
-    } while (false)
+    } while (0)
 
 #if __GLIBC__ != 2
 #error Unknown glibc
@@ -40,15 +40,12 @@
 #define SIGSETSIZE (8)
 #endif
 
-inline long long non_libc_rt_sigaction(int signo, const struct kernel_sigaction* newact, struct kernel_sigaction* oldact) {
+static inline long long non_libc_rt_sigaction(int signo, const struct kernel_sigaction *newact, struct kernel_sigaction *oldact) {
     return inline_syscall6(__NR_rt_sigaction, signo, newact, oldact, SIGSETSIZE, 0, 0);
 }
 
-inline long long non_libc_rt_sigprocmask(int how, const sigset_t* set, sigset_t* oset) {
+static inline long long non_libc_rt_sigprocmask(int how, const sigset_t *set, sigset_t *oset) {
     return inline_syscall6(__NR_rt_sigprocmask, how, set, oset, SIGSETSIZE, 0, 0);
 }
 
-#ifdef __cplusplus
-extern "C" 
-#endif
-const char* get_syscall_name(size_t sysno);
+const char *get_syscall_name(size_t sysno);
